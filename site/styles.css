@@ -308,10 +308,13 @@ h1, h2 { font-family: Georgia, "Times New Roman", serif; }
 .prose pre { overflow-x: auto; padding: 17px; color: #e8edf6; background: var(--navy); border-radius: 9px; font-size: 12px; }
 .prose code { padding: 2px 5px; color: #a22e4b; background: #f7edf0; border-radius: 4px; }
 .prose pre code { padding: 0; color: inherit; background: none; }
-.code-block { position: relative; }
-.code-block pre { padding-top: 40px; }
+.prose h4 { margin: 1.4em 0 .5em; font-family: inherit; font-size: 13px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+/* Rótulo em negrito logo acima do bloco: fica colado nele. */
+.prose p:has(+ .code-block) { margin-bottom: 4px; font-size: 13px; color: var(--muted); }
+.code-block { position: relative; margin: 0 0 14px; }
+.code-block pre { margin: 0; padding: 12px 88px 12px 14px; font-size: 14px; line-height: 1.5; }
 .copy-code {
-  position: absolute; top: 8px; right: 8px; padding: 4px 10px; border: 1px solid rgba(255, 255, 255, .18);
+  position: absolute; top: 7px; right: 8px; padding: 4px 10px; border: 1px solid rgba(255, 255, 255, .18);
   color: #c9d3e6; background: rgba(255, 255, 255, .08); border-radius: 6px; font: inherit; font-size: 12px; cursor: pointer;
 }
 .copy-code:hover, .copy-code:focus-visible { color: #fff; background: rgba(255, 255, 255, .16); }
