@@ -2,14 +2,14 @@
   "name": "personal-wiki",
   "version": "1.0.0",
   "private": true,
-  "description": "Wiki pessoal estática (GitHub Pages) com dados no Supabase.",
+  "description": "Wiki pessoal estática (GitHub Pages) com dados num Postgres + PostgREST próprio.",
   "type": "module",
   "scripts": {
     "build": "node scripts/build-site.js",
     "dev": "node scripts/build-site.js && node scripts/serve.js",
-    "migrate:supabase": "node scripts/migrate-to-supabase.js",
     "test": "node --test",
-    "check": "node --check scripts/build-site.js && node --check scripts/migrate-to-supabase.js && node --check site/js/app.js"
+    "check": "node --check scripts/build-site.js && node --check scripts/migrate-to-postgrest.js && node --check site/js/app.js && node --check site/js/api.js",
+    "migrate:postgrest": "node scripts/migrate-to-postgrest.js"
   },
   "engines": {
     "node": ">=22"

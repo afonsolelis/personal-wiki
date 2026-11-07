@@ -31,8 +31,7 @@ jobs:
       - name: Montar o site
         run: npm run build
         env:
-          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ vars.SUPABASE_KEY }}
+          API_URL: ${{ vars.API_URL }}
           OWNER_EMAIL: ${{ vars.OWNER_EMAIL }}
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

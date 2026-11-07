@@ -1,12 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { fileBadge, formatBytes, isAccepted, searchKey, storageKey, titleFromFilename } from '../site/js/files.js';
-
-test('storageKey remove acentos e caracteres que o Storage recusa', () => {
-  assert.equal(storageKey('abc', 'Certidão de Nascimento (2ª via).pdf'), 'abc/Certidao_de_Nascimento_2_via_.pdf');
-  assert.equal(storageKey('abc', '###'), 'abc/arquivo');
-});
+import { fileBadge, formatBytes, isAccepted, searchKey, titleFromFilename } from '../site/js/files.js';
 
 test('isAccepted aceita só as extensões permitidas', () => {
   assert.equal(isAccepted('foto.JPG'), true);

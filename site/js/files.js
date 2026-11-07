@@ -1,4 +1,4 @@
-// Funções puras sobre arquivos; usadas no navegador, no script de migração e nos testes.
+// Funções sobre arquivos; usadas no navegador e nos testes.
 
 export const maxUploadMb = 10;
 
@@ -16,16 +16,14 @@ export function isAccepted(filename) {
   return acceptedExtensions.includes(extensionOf(filename));
 }
 
-// O Storage só aceita nomes simples: tira acentos e troca o resto por "_".
-// O nome original continua na tabela e é usado no download.
-export function storageKey(id, filename) {
-  const safe = String(filename)
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/[^A-Za-z0-9._-]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-    .slice(0, 120) || 'arquivo';
-  return `${id}/${safe}`;
+// Conteúdo do arquivo em base64, para enviar no JSON da API.
+export function readBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).replace(/^data:[^,]*,/, ''));
+    reader.onerror = () => reject(new Error(`Não foi possível ler “${file.name}”.`));
+    reader.readAsDataURL(file);
+  });
 }
 
 export function titleFromFilename(filename) {

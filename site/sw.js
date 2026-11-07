@@ -1,6 +1,6 @@
 // Service worker mínimo: permite instalar o app e abre a casca do site mesmo sem rede.
 // Sempre tenta a rede primeiro, então nunca mostra uma versão velha quando há conexão.
-// Os dados (Supabase) nunca passam por aqui.
+// Os dados (API da wiki) nunca passam por aqui.
 const CACHE = 'personal-wiki-v1';
 
 self.addEventListener('install', () => self.skipWaiting());

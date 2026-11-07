@@ -1,26 +1,29 @@
-import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.0/+esm';
 import MarkdownIt from 'https://cdn.jsdelivr.net/npm/markdown-it@14.1.0/+esm';
 import markdownItTaskLists from 'https://cdn.jsdelivr.net/npm/markdown-it-task-lists@2.1.1/+esm';
 
+import { createApi, eq } from './api.js';
 import { monthLabel, parseMonth, shiftMonth, todayIso } from './bills.js';
 import {
-  acceptedExtensions, fileBadge, formatBytes, isAccepted, maxUploadMb, searchKey, storageKey, titleFromFilename,
+  acceptedExtensions, fileBadge, formatBytes, isAccepted, maxUploadMb, readBase64, searchKey, titleFromFilename,
 } from './files.js';
 import { enableReorder } from './reorder.js';
 
 const config = window.WIKI_CONFIG ?? {};
 const app = document.getElementById('app');
 
-if (!config.supabaseUrl || !config.supabaseKey || !config.ownerEmail) {
+if (!config.apiUrl || !config.ownerEmail) {
   app.innerHTML = `<main class="shell"><section class="error-page"><span>⚙</span><h1>Configuração ausente</h1>
-    <p>Defina SUPABASE_URL, SUPABASE_KEY e OWNER_EMAIL nas variáveis do repositório e publique de novo.</p></section></main>`;
+    <p>Defina API_URL e OWNER_EMAIL nas variáveis do repositório e publique de novo.</p></section></main>`;
   throw new Error('config.js ausente ou incompleto');
 }
 
-const supabase = createClient(config.supabaseUrl, config.supabaseKey, {
-  auth: { persistSession: true, autoRefreshToken: true },
+// Token vencido ou recusado: volta para a tela de login.
+const api = createApi(config.apiUrl, {
+  onUnauthorized() {
+    setFlash('error', 'Sua sessão expirou. Entre de novo.');
+    setTimeout(route);
+  },
 });
-const bucket = supabase.storage.from('documents');
 const markdown = new MarkdownIt({ html: false, linkify: true, typographer: true })
   .use(markdownItTaskLists, { enabled: false, label: false });
 
@@ -28,7 +31,6 @@ const acceptAttr = acceptedExtensions.join(',');
 const pageCategories = ['Geral', 'Formação', 'Trabalho', 'Pessoal', 'Guias', 'Rotinas'];
 const documentCategories = ['Documentos', 'Formação', 'Empresa', 'Pessoal', 'Imagens'];
 
-let session = null;
 let flash = null;
 
 // ---------- utilidades ----------
@@ -47,11 +49,6 @@ function formatDate(value) {
 
 function setFlash(type, message) {
   flash = { type, message };
-}
-
-function check({ data, error }) {
-  if (error) throw error;
-  return data;
 }
 
 function go(hash) {
@@ -73,12 +70,11 @@ function badge(mimeType) {
 // Links assinados valem 1 hora; o download usa o nome original do arquivo.
 async function fileLinks(documents) {
   if (!documents.length) return {};
-  const data = check(await bucket.createSignedUrls(documents.map((item) => item.storage_path), 3600));
-  const byPath = Object.fromEntries(data.map((item) => [item.path, item.signedUrl]));
+  const signed = await api.rpc('file_links', { ids: documents.map((item) => item.id) });
   return Object.fromEntries(documents.map((item) => {
-    const url = byPath[item.storage_path];
-    return [item.id, url
-      ? { view: url, download: `${url}&download=${encodeURIComponent(item.original_name)}` }
+    const query = signed[item.id];
+    return [item.id, query
+      ? { view: api.fileUrl(query), download: api.fileUrl(query, true) }
       : { view: '#', download: '#' }];
   }));
 }
@@ -106,25 +102,17 @@ function validateFiles(files) {
 
 async function uploadFiles(files, { category, description, noteId }) {
   for (const file of files) {
-    const id = crypto.randomUUID();
-    const path = storageKey(id, file.name);
-    const mimeType = file.type || 'application/octet-stream';
-    check(await bucket.upload(path, file, { contentType: mimeType }));
-    const { error } = await supabase.from('documents').insert({
-      id,
-      title: titleFromFilename(file.name).slice(0, 180) || 'Documento',
-      category: category || 'Documentos',
-      description: description || '',
-      original_name: file.name.slice(0, 255),
-      mime_type: mimeType,
-      file_size: file.size,
-      storage_path: path,
-      note_id: noteId || null,
+    await api.rpc('create_document', {
+      document: {
+        title: titleFromFilename(file.name).slice(0, 180) || 'Documento',
+        category: category || 'Documentos',
+        description: description || '',
+        original_name: file.name.slice(0, 255),
+        mime_type: file.type || 'application/octet-stream',
+        note_id: noteId || null,
+      },
+      data: await readBase64(file),
     });
-    if (error) {
-      await bucket.remove([path]);
-      throw error;
-    }
   }
 }
 
@@ -165,7 +153,7 @@ function layout(active, title, body) {
       ${message ? `<div class="flash flash-${message.type}" role="status">${esc(message.message)}</div>` : ''}
       ${body}
     </main>
-    <footer class="footer">Personal Wiki · dados protegidos no Supabase</footer>`;
+    <footer class="footer">Personal Wiki · dados protegidos em servidor próprio</footer>`;
 }
 
 function loading() {
@@ -203,7 +191,7 @@ function loginView() {
         <span class="eyebrow light">Seu espaço privado</span>
         <h1>Ideias, registros e documentos em um só lugar.</h1>
         <p>Um acervo simples para guardar o que importa e encontrar tudo sem esforço.</p>
-        <div class="intro-detail"><span class="intro-icon">⌁</span><span>Dados protegidos no Supabase</span></div>
+        <div class="intro-detail"><span class="intro-icon">⌁</span><span>Dados protegidos em servidor próprio</span></div>
       </section>
       <section class="login-panel">
         <div class="login-card">
@@ -229,15 +217,14 @@ function loginView() {
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     busy(form, true);
-    const { error } = await supabase.auth.signInWithPassword({
-      email: config.ownerEmail,
-      password: form.elements.password.value,
-    });
-    if (error) {
-      setFlash('error', error.status === 429 ? 'Muitas tentativas. Aguarde alguns minutos.' : 'Senha incorreta.');
+    try {
+      await api.login(config.ownerEmail, form.elements.password.value);
+      route();
+    } catch (error) {
+      setFlash('error', error.status === 401 || error.status === 429
+        ? error.message : 'Não foi possível entrar agora. Tente de novo.');
       loginView();
     }
-    // Com sucesso, onAuthStateChange abre o painel.
   });
 }
 
@@ -248,11 +235,9 @@ async function dashboardView(query) {
   const category = (query.get('category') ?? '').trim().slice(0, 80);
 
   const [allNotes, allDocuments] = await Promise.all([
-    supabase.from('notes').select('id, title, category, content, is_pinned, position, updated_at')
-      .order('position', { ascending: true }).order('updated_at', { ascending: false }).then(check),
-    supabase.from('documents')
-      .select('id, title, category, description, original_name, mime_type, file_size, storage_path, updated_at, note_id')
-      .order('updated_at', { ascending: false }).then(check),
+    api.get('notes?select=id,title,category,content,is_pinned,position,updated_at&order=position.asc,updated_at.desc'),
+    api.get('documents?select=id,title,category,description,original_name,mime_type,file_size,updated_at,note_id'
+      + '&order=updated_at.desc'),
   ]);
 
   const term = searchKey(search);
@@ -375,7 +360,7 @@ async function dashboardView(query) {
 
   const grid = app.querySelector('[data-reorder]');
   if (grid && notes.length > 1) {
-    enableReorder(grid, async (ids) => check(await supabase.rpc('reorder_notes', { ids })));
+    enableReorder(grid, (ids) => api.rpc('reorder_notes', { ids }));
   }
   if (query.get('section') === 'documentos') document.getElementById('documentos').scrollIntoView();
 }
@@ -383,13 +368,12 @@ async function dashboardView(query) {
 // ---------- páginas ----------
 
 async function loadPage(id) {
-  return check(await supabase.from('notes').select('*').eq('id', id).maybeSingle());
+  return api.one(`notes?id=${eq(id)}`);
 }
 
 async function loadAttachments(noteId) {
-  return check(await supabase.from('documents')
-    .select('id, title, original_name, mime_type, file_size, storage_path, updated_at')
-    .eq('note_id', noteId).order('updated_at', { ascending: false }));
+  return api.get(`documents?select=id,title,original_name,mime_type,file_size,updated_at&note_id=${eq(noteId)}`
+    + '&order=updated_at.desc');
 }
 
 async function pageView(id) {
@@ -526,9 +510,9 @@ async function pageFormView(id) {
       validateFiles(files);
       let pageId = page?.id;
       if (page) {
-        check(await supabase.from('notes').update({ ...values, updated_at: new Date().toISOString() }).eq('id', page.id));
+        await api.update(`notes?id=${eq(page.id)}`, { ...values, updated_at: new Date().toISOString() });
       } else {
-        pageId = check(await supabase.from('notes').insert(values).select('id').single()).id;
+        [{ id: pageId }] = await api.insert('notes?select=id', values);
       }
       await uploadFiles(files, { category: values.category, description: `Anexo da página ${values.title}.`, noteId: pageId });
       setFlash('success', page ? 'Página atualizada.' : `Página criada${files.length ? ` com ${files.length} anexo(s)` : ''}.`);
@@ -543,12 +527,11 @@ async function pageFormView(id) {
 // ---------- documentos ----------
 
 async function documentFormView(id) {
-  const pages = check(await supabase.from('notes').select('id, title').order('title'));
+  const pages = await api.get('notes?select=id,title&order=title');
   let document = null;
   if (id) {
-    document = check(await supabase.from('documents')
-      .select('id, title, category, description, original_name, mime_type, file_size, storage_path, note_id')
-      .eq('id', id).maybeSingle());
+    document = await api.one('documents?select=id,title,category,description,original_name,mime_type,file_size,note_id'
+      + `&id=${eq(id)}`);
     if (!document) return errorPage('Documento não encontrado', 'Esse documento não existe.', '404');
   }
   const links = document ? await fileLinks([document]) : {};
@@ -558,7 +541,7 @@ async function documentFormView(id) {
     <section class="form-heading narrow">
       <span class="eyebrow">${document ? 'Organizar arquivo' : 'Biblioteca'}</span>
       <h1>${document ? 'Editar documento' : 'Enviar documentos'}</h1>
-      <p>${document ? 'Atualize o título, a categoria ou a página relacionada.' : 'Os arquivos ficam guardados no Supabase, visíveis só para você.'}</p>
+      <p>${document ? 'Atualize o título, a categoria ou a página relacionada.' : 'Os arquivos ficam guardados no servidor da wiki, visíveis só para você.'}</p>
     </section>
 
     <form class="form-card standalone-form" id="document-form">
@@ -621,8 +604,7 @@ async function documentFormView(id) {
       if (document) {
         const title = form.elements.title.value.trim().slice(0, 180);
         if (!title) throw new Error('Informe um título para o documento.');
-        check(await supabase.from('documents')
-          .update({ ...values, title, updated_at: new Date().toISOString() }).eq('id', document.id));
+        await api.update(`documents?id=${eq(document.id)}`, { ...values, title, updated_at: new Date().toISOString() });
         setFlash('success', 'Documento atualizado.');
       } else {
         const files = [...form.elements.files.files];
@@ -644,8 +626,8 @@ async function documentFormView(id) {
 async function billsView(query) {
   const month = parseMonth(query.get('month'));
   const [bills, payments] = await Promise.all([
-    supabase.from('bills').select('id, name').order('name').then(check),
-    supabase.from('bill_payments').select('bill_id').eq('month', `${month}-01`).then(check),
+    api.get('bills?select=id,name&order=name'),
+    api.get(`bill_payments?select=bill_id&month=${eq(`${month}-01`)}`),
   ]);
   const paid = new Set(payments.map((item) => item.bill_id));
   const label = monthLabel(month);
@@ -688,7 +670,7 @@ async function billsView(query) {
     const name = form.elements.name.value.trim().slice(0, 120);
     if (!name) return;
     busy(form, true);
-    await runAction(async () => { check(await supabase.from('bills').insert({ name })); });
+    await runAction(async () => { await api.insert('bills', { name }, 'return=minimal'); });
     document.querySelector('#bill-form input')?.focus();
   });
 }
@@ -717,19 +699,20 @@ async function runAction(action) {
 
 const actions = {
   async logout() {
-    await supabase.auth.signOut();
+    api.logout();
+    route();
   },
   async 'delete-page'(button) {
     await runAction(async () => {
-      check(await supabase.from('notes').delete().eq('id', button.dataset.id));
+      await api.remove(`notes?id=${eq(button.dataset.id)}`);
       setFlash('success', 'Página removida. Os documentos anexados foram preservados na biblioteca.');
       return '#/';
     });
   },
   async 'delete-document'(button) {
     await runAction(async () => {
-      const removed = check(await supabase.from('documents').delete().eq('id', button.dataset.id).select('storage_path'));
-      if (removed.length) await bucket.remove(removed.map((item) => item.storage_path));
+      // O arquivo é apagado junto com o registro (ON DELETE CASCADE).
+      await api.remove(`documents?id=${eq(button.dataset.id)}`);
       setFlash('success', 'Documento removido.');
       return '#/?section=documentos';
     });
@@ -738,19 +721,20 @@ const actions = {
     const { id, month } = button.dataset;
     await runAction(async () => {
       if (button.dataset.paid === 'true') {
-        check(await supabase.from('bill_payments').delete().eq('bill_id', id).eq('month', `${month}-01`));
+        await api.remove(`bill_payments?bill_id=${eq(id)}&month=${eq(`${month}-01`)}`);
       } else {
-        check(await supabase.from('bill_payments').upsert({ bill_id: id, month: `${month}-01` }));
+        await api.insert('bill_payments', { bill_id: id, month: `${month}-01` },
+          'return=minimal,resolution=ignore-duplicates');
       }
     });
   },
   async 'delete-bill'(button) {
-    await runAction(async () => { check(await supabase.from('bills').delete().eq('id', button.dataset.id)); });
+    await runAction(async () => { await api.remove(`bills?id=${eq(button.dataset.id)}`); });
   },
   async 'reset-bills'(button) {
     const { month } = button.dataset;
     await runAction(async () => {
-      check(await supabase.from('bill_payments').delete().eq('month', `${month}-01`));
+      await api.remove(`bill_payments?month=${eq(`${month}-01`)}`);
       setFlash('success', `Checks de ${monthLabel(month).toLowerCase()} zerados.`);
     });
   },
@@ -769,7 +753,7 @@ app.addEventListener('click', async (event) => {
 // ---------- rotas ----------
 
 async function route() {
-  if (!session) return loginView();
+  if (!api.session) return loginView();
   const { path, query } = parseRoute();
   const parts = path.split('/').filter(Boolean);
   loading();
@@ -791,11 +775,4 @@ async function route() {
 }
 
 window.addEventListener('hashchange', route);
-
-supabase.auth.onAuthStateChange((event, current) => {
-  const wasSignedIn = Boolean(session);
-  session = current;
-  // Renovar o token não muda nada na tela.
-  if (event === 'TOKEN_REFRESHED' || (event === 'SIGNED_IN' && wasSignedIn)) return;
-  if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'SIGNED_OUT') setTimeout(route);
-});
+route();
