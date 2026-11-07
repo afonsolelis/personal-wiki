@@ -308,6 +308,14 @@ h1, h2 { font-family: Georgia, "Times New Roman", serif; }
 .prose pre { overflow-x: auto; padding: 17px; color: #e8edf6; background: var(--navy); border-radius: 9px; font-size: 12px; }
 .prose code { padding: 2px 5px; color: #a22e4b; background: #f7edf0; border-radius: 4px; }
 .prose pre code { padding: 0; color: inherit; background: none; }
+.code-block { position: relative; }
+.code-block pre { padding-top: 40px; }
+.copy-code {
+  position: absolute; top: 8px; right: 8px; padding: 4px 10px; border: 1px solid rgba(255, 255, 255, .18);
+  color: #c9d3e6; background: rgba(255, 255, 255, .08); border-radius: 6px; font: inherit; font-size: 12px; cursor: pointer;
+}
+.copy-code:hover, .copy-code:focus-visible { color: #fff; background: rgba(255, 255, 255, .16); }
+.copy-code.copied { color: #8ee6c4; border-color: rgba(142, 230, 196, .4); }
 .prose .contains-task-list { padding-left: 0; list-style: none; }
 .prose .task-list-item { display: flex; align-items: baseline; gap: 8px; }
 .prose .task-list-item-checkbox { flex: none; width: 14px; height: 14px; accent-color: var(--blue); }

@@ -167,6 +167,35 @@ function errorPage(title, message, status = '') {
     <a class="button button-primary" href="#/">Voltar ao acervo</a></section>`);
 }
 
+// Põe um botão "Copiar" no canto de cada bloco de código renderizado.
+function addCopyButtons(container) {
+  container?.querySelectorAll('pre').forEach((pre) => {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'code-block';
+    pre.replaceWith(wrapper);
+    wrapper.append(pre);
+    wrapper.insertAdjacentHTML('beforeend',
+      '<button class="copy-code" type="button" data-action="copy-code" aria-label="Copiar código">Copiar</button>');
+  });
+}
+
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    // Navegadores sem a API de área de transferência.
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.setAttribute('readonly', '');
+    area.style.cssText = 'position:fixed;opacity:0';
+    document.body.append(area);
+    area.select();
+    const ok = document.execCommand('copy');
+    area.remove();
+    if (!ok) throw new Error('Não foi possível copiar.');
+  }
+}
+
 function bindFileLabels() {
   app.querySelectorAll('input[type="file"]').forEach((input) => {
     input.addEventListener('change', () => {
@@ -419,6 +448,7 @@ async function pageView(id) {
           data-confirm="Remover esta página? Os documentos anexados serão preservados.">Remover</button>
       </section>
     </article>`);
+  addCopyButtons(app.querySelector('.page-content'));
 }
 
 async function pageFormView(id) {
@@ -698,6 +728,21 @@ async function runAction(action) {
 }
 
 const actions = {
+  async 'copy-code'(button) {
+    const code = button.closest('.code-block').querySelector('pre').innerText.replace(/\n$/, '');
+    try {
+      await copyText(code);
+      button.textContent = 'Copiado ✓';
+      button.classList.add('copied');
+    } catch {
+      button.textContent = 'Falhou';
+    }
+    clearTimeout(button.resetTimer);
+    button.resetTimer = setTimeout(() => {
+      button.textContent = 'Copiar';
+      button.classList.remove('copied');
+    }, 2000);
+  },
   async logout() {
     api.logout();
     route();
